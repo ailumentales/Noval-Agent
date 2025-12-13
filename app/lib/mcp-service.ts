@@ -259,18 +259,18 @@ async function multiply(params: MultiplyParams | BatchOperationParams<MultiplyPa
 }
 
 // 实现创建章节工具函数
-async function createChapter(params: CreateChapterParams | BatchOperationParams<CreateChapterParams>): Promise<{ chapterId: number } | { chapterIds: number[] }> {
+async function createChapter(params: CreateChapterParams | BatchOperationParams<CreateChapterParams>): Promise<string> {
   // 批量操作
   if ('items' in params) {
     console.log(`[MCP] 批量调用createChapter工具，共${params.items.length}项`);
     const results = await Promise.all(
       params.items.map(item => createChapter(item))
     );
-    return { chapterIds: results.map(result => (result as { chapterId: number }).chapterId) };
+    return `创建章节成功，创建的章节索引: ${results.join(', ')}`;
   }
   // 单个操作
   const result = await chapterOperations.add(params.title, params.prompt);
-  return { chapterId: result.lastInsertRowid };
+  return `创建章节成功，创建的章节索引: ${result.lastInsertRowid}`;
 }
 
 // 实现更新章节工具函数

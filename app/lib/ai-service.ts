@@ -44,7 +44,7 @@ async function callTool(toolCall: ToolCall): Promise<string> {
   try {
     // 使用MCP服务的通用工具调用方法
     const result = await mcpService.callTool(toolCall.name, toolCall.parameters);
-    return `计算结果: ${JSON.stringify(result)}`;
+    return `工具调用输出: ${JSON.stringify(result)}`;
   } catch (error) {
     console.error('工具调用失败:', error);
     throw error;
@@ -92,7 +92,7 @@ export class AIService {
     this.defaultConfig = {
       model: process.env.OPENAI_MODEL || 'deepseek-chat',
       temperature: 0.7,
-      maxTokens: 1000,
+      maxTokens: 4096000,
       enableTools: true,
       tools: openAITools,
       ...config
@@ -125,6 +125,10 @@ export class AIService {
       });
 
       const message = chatCompletion.choices[0]?.message;
+      messages.push({
+        role: message?.role || 'assistant',
+        content: message?.content || ''
+      });
 
       // 处理工具调用
       if (message?.tool_calls && message.tool_calls.length > 0) {
@@ -135,7 +139,7 @@ export class AIService {
             const toolName = functionCall.name;
             const argumentsString = functionCall.arguments || '{}';
             
-            console.log(`[MCP] 原始参数内容: ${argumentsString}`);
+            // console.log(`[MCP] 原始参数内容: ${argumentsString}`);
             // 清理参数字符串
             const cleanArguments = argumentsString
               .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
@@ -160,6 +164,8 @@ export class AIService {
             }
 
             if (doinvoke) {
+              console.log(`[MCP] 调用工具: ${toolName}`);
+              console.log(`[MCP] 当前的思考链路: ${JSON.stringify(messages)}`);
               // 调用相应的工具
               const toolResult = await callTool({
                 name: toolName,

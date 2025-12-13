@@ -177,12 +177,21 @@ export default function Home() {
   // 预留预处理接口
   // 这里可以根据不同类型实现不同的预处理逻辑
   const outlinePreprocessor = (outline: any) => {
+     // 构建所有大纲内容
+        const allOutlinesContent = settingsList.map(outline => {
+          return `- 名称：${outline.name}（类型：${outline.type}）\n内容：${outline.content || '无'}`;
+        }).join('\n\n');
     return {
+      
       // 返回预处理后的system messages数组
       getSystemMessages: () => [
         {
           role: 'system' as const,
-          content: `你是一位专业的小说家助手，正在处理大纲：${outline.name}（类型：${outline.type}）。请根据用户的请求生成符合该大纲设定的高质量内容。`
+          content: `你是一位专业的小说家助手，正在处理大纲：${outline.name}（类型：${outline.type}）。请根据用户的请求和大纲的类型，进一步丰富小说的设定和基础背景、大纲故事等内容。`
+        },
+        {
+          role: 'system' as const,
+          content: `你需要为整个小说的创作设定大纲，注意你不需要编写详细的剧情或者正文，而是对于小说的设定、基础背景、大纲故事等内容进行完善。`
         },
         {
           role: 'system' as const,
@@ -191,6 +200,10 @@ export default function Home() {
       ],
       // 返回预处理后的user messages数组
       processUserInput: (input: string) => [
+        {
+          role: 'user' as const,
+          content: `小说所有设定：\n${allOutlinesContent}`
+        },
         {
           role: 'user' as const,
           content: input
@@ -219,6 +232,64 @@ export default function Home() {
         const allOutlinesContent = settingsList.map(outline => {
           return `- 名称：${outline.name}（类型：${outline.type}）\n内容：${outline.content || '无'}`;
         }).join('\n\n');
+
+        // 获取当前章节的前3章和后3章信息（处理边界条件）
+        const getAdjacentChapters = (currentChapterNumber: number, chapters: any[]) => {
+        const sortedChapters = chapters.sort((a, b) => a.number - b.number);
+        const currentIndex = sortedChapters.findIndex(ch => ch.number === currentChapterNumber);
+        
+        const prev3 = [];
+        const next3 = [];
+        
+        // 前3章（不包含当前章节）
+        for (let i = Math.max(0, currentIndex - 3); i < currentIndex; i++) {
+          if (sortedChapters[i]) {
+            prev3.push(sortedChapters[i]);
+          }
+        }
+        
+        // 后3章
+        for (let i = currentIndex + 1; i <= currentIndex + 3 && i < sortedChapters.length; i++) {
+          if (sortedChapters[i]) {
+            next3.push(sortedChapters[i]);
+          }
+        }
+        
+        return { prev3, next3 };
+      };
+      
+      const { prev3, next3 } = getAdjacentChapters(chapter.number, chaptersList);
+      
+      const prevChaptersContent = prev3.length > 0 
+        ? prev3.map(ch => `第${ch.number}章 ${ch.title}：${ch.content ? ch.content.substring(0, 200) + '...' : '暂无内容'}`).join('\n\n')
+        : '无';
+      
+      const nextChaptersContent = next3.length > 0
+        ? next3.map(ch => `第${ch.number}章 ${ch.title}：${ch.prompt || '暂无大纲'}`).join('\n\n')
+        : '无';
+      
+      return [
+        {
+          role: 'user' as const,
+          content: `当前章节的相关信息：\n- 章节：第${chapter.number}章\n- 标题：${chapter.title}\n `
+        },
+        {
+          role: 'user' as const,
+          content: `小说所有设定：\n${allOutlinesContent}`
+        },
+        {
+          role: 'user' as const,
+          content: `前3章内容：\n${prevChaptersContent}`
+        },
+        {
+          role: 'user' as const,
+          content: `后3章大纲：\n${nextChaptersContent}`
+        },
+        {
+          role: 'user' as const,
+          content: `当前章节的大纲：${input}`
+        }
+      ];
         
         return [
           {
@@ -261,13 +332,14 @@ export default function Home() {
           content: `你是一位专业的小说家助手，请根据用户需求生成小说章节列表并使用create_chapter工具创建章节。
           
           你需要：
-          1. 分多次生成 ${autoGenerateCount} 个小说章节，每个章节包含标题和简短描述
+          1. 生成 ${autoGenerateCount} 个小说章节，每个章节包含标题和prompt字段
           2. 确保章节标题和描述内容丰富且有逻辑性
-          3. 章节编号应该从${maxChapterNumber + 1}开始依次递增
-          4. 每个章节需要提供title和prompt字段
+          3. 如果章节数量过多，你应当分批输出，每次最多不超过10个章节
+          4. Prompt应当是一个给AI使用的提示词，你需要结合需求来设计一个良好的提示词。
           5. prompt字段需要描述当前章节的内容和主题，内容应当包括关联任人物，发生地点，主要行为，包括3-5个核心情节点
           6. 不同章节之间的内容和主题应当具备连贯性。如果是跨章节的关联，应当在prompt中说明和之前的哪些章节由情节关联
-          7. 你应当逐个生成章节，而不是一次生成所有的章节
+          7. 生成完成所有章节之后，不需要继续咨询用户的行为，可以直接结束本次对话
+          8. 你设计的章节列表应该能够完整的描述出整个小说大纲的故事内容，让整个结构能够完整的呈现出来，包括整个故事的开头和结尾在内的全部内容。
           
           create_chapter工具说明：
           - name: "create_chapter"
