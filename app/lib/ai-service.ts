@@ -76,37 +76,25 @@ export class AIService {
   private defaultConfig: AIServiceConfig;
 
   constructor(config: AIServiceConfig) {
-    // 默认工具配置（包含数字乘法工具）
-    const defaultTools = [
-      {
-        type: 'function' as const,
-        function: {
-          name: 'multiply',
-          description: '计算两个数字的乘积',
-          parameters: {
-            type: 'object',
-            properties: {
-              a: {
-                type: 'number',
-                description: '第一个数字'
-              },
-              b: {
-                type: 'number',
-                description: '第二个数字'
-              }
-            },
-            required: ['a', 'b']
-          }
-        }
+    // 从MCP服务获取所有已注册的工具定义
+    const mcpTools = mcpService.getToolsMetadata();
+    
+    // 将MCP工具转换为OpenAI客户端需要的格式
+    const openAITools = mcpTools.map(tool => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters
       }
-    ];
+    }));
 
     this.defaultConfig = {
       model: process.env.OPENAI_MODEL || 'deepseek-chat',
       temperature: 0.7,
       maxTokens: 1000,
       enableTools: true,
-      tools: defaultTools,
+      tools: openAITools,
       ...config
     };
 
