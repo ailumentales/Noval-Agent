@@ -1,6 +1,22 @@
 import { NextResponse } from 'next/server';
 import { outlineOperations } from '@/app/lib/database';
 
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const idNum = parseInt(id);
+    const outline = await outlineOperations.getById(idNum);
+    if (outline) {
+      return NextResponse.json(outline);
+    } else {
+      return NextResponse.json({ error: '大纲不存在' }, { status: 404 });
+    }
+  } catch (error) {
+    console.error('获取大纲失败:', error);
+    return NextResponse.json({ error: '获取大纲失败' }, { status: 500 });
+  }
+}
+
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;

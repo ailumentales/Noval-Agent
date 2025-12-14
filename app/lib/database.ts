@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 // 定义数据结构
-interface Outline {
+export interface Outline {
   id: number;
   name: string;
   type: string;
@@ -12,7 +12,7 @@ interface Outline {
   updated_at: string;
 }
 
-interface Chapter {
+export interface Chapter {
   id: number;
   title: string;
   number: number;
@@ -152,6 +152,12 @@ export const outlineOperations = {
     }
     
     return { changes: 0 };
+  },
+  
+  // 根据ID获取大纲
+  getById: async (id: number) => {
+    const db = initializeDatabase();
+    return db.outlines.find((outline: Outline) => outline.id === id);
   }
 };
 
@@ -231,6 +237,12 @@ export const chapterOperations = {
     }
     
     return { changes: 0 };
+  },
+  
+  // 根据ID获取章节
+  getById: async (id: number) => {
+    const db = initializeDatabase();
+    return db.chapters.find((chapter: Chapter) => chapter.id === id);
   }
 };
 
