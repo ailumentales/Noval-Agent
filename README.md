@@ -1,4 +1,4 @@
-# Novel Agent - AI小说创作助手
+# Novel Agent - AI拾光研发小说创作助手
 
 Novel Agent是一个基于Next.js和OpenAI API构建的AI小说创作助手，提供了完整的小说章节管理和AI辅助创作功能。
 
