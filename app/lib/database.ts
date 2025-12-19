@@ -243,7 +243,29 @@ export const chapterOperations = {
   getById: async (id: number) => {
     const db = initializeDatabase();
     return db.chapters.find((chapter: Chapter) => chapter.id === id);
+  },
+  
+  // 根据章节编号获取章节
+  getByNumber: async (number: number) => {
+    const db = initializeDatabase();
+    if (number < 1) {
+      return null;
+    }
+    return db.chapters.find((chapter: Chapter) => chapter.number === number);
+  },
+  
+  // 根据编号范围获取章节
+  getByRange: async (startNumber: number, endNumber: number) => {
+    const db = initializeDatabase();
+    if (startNumber < 1 || endNumber < startNumber) {
+      return [];
+    }
+    return db.chapters.filter((chapter: Chapter) => 
+      chapter.number >= startNumber && chapter.number <= endNumber
+    ).sort((a: Chapter, b: Chapter) => a.number - b.number);
   }
 };
 
-export default { outlineOperations, chapterOperations };
+const databaseOperations = { outlineOperations, chapterOperations };
+
+export default databaseOperations;

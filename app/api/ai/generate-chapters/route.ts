@@ -62,7 +62,6 @@ export async function POST(request: Request) {
         role: 'user',
         content: `你需要基于已有的章节，在之后新增生成 ${autoGenerateCount} 个小说章节`
       },
-      
     ];
 
     // 使用AI客户端生成章节（一次性响应）

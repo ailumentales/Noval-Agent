@@ -11,9 +11,11 @@
   "dependencies": {
     "@douyinfe/semi-ui": "^2.89.0",
     "@douyinfe/semi-webpack-plugin": "^2.89.0",
+    "@langchain/core": "^1.1.7",
+    "@langchain/langgraph": "^1.0.7",
     "@langchain/openai": "^1.2.0",
     "@modelcontextprotocol/sdk": "^1.24.3",
-    "langchain": "^1.2.0",
+    "langchain": "^1.2.2",
     "next": "16.0.10",
     "openai": "^6.10.0",
     "react": "19.2.1",

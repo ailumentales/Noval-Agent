@@ -1,19 +1,19 @@
 
 import { ChatOpenAI } from '@langchain/openai';
-import { BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
+import { BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage, ToolCall } from '@langchain/core/messages';
 import { StructuredTool } from '@langchain/core/tools';
-import { createMCPService } from './mcp-service';
+import { createTools } from './langchain-tools';
 
 // 定义简洁的OpenAI消息类型，用于客户端使用
 export interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
-  tool_call?: Record<string, any>;
+  tool_call?: ToolCall;
   tool_call_id?: string;
 }
 
-// MCP工具调用服务实例
-const mcpService = createMCPService();
+// LangChain工具实例
+const langchainTools = createTools();
 
 // 定义AI服务配置接口
 export interface AIServiceV2Config {
@@ -34,30 +34,9 @@ export class AIServiceV2 {
   private tools: StructuredTool[];
 
   constructor(config: AIServiceV2Config) {
-    // 从MCP服务获取所有已注册的工具定义
-    const mcpToolsMetadata = mcpService.getToolsMetadata();
+    // 直接使用LangChain工具
+    this.tools = langchainTools;
     
-    // 将MCP工具转换为LangChain工具
-    this.tools = [];
-    for (const toolMetadata of mcpToolsMetadata) {
-      try {
-        // 直接创建工具对象
-        const newTool = {
-          name: toolMetadata.name,
-          description: toolMetadata.description,
-          schema: toolMetadata.parameters,
-          async invoke(input: Record<string, any>) {
-            const result = await mcpService.callTool(toolMetadata.name, input);
-            return JSON.stringify(result);
-          }
-        };
-        this.tools.push(newTool as StructuredTool);
-        console.log(`成功创建工具: ${toolMetadata.name}`);
-      } catch (error) {
-        console.error(`创建工具 ${toolMetadata.name} 失败:`, error as Error);
-      }
-    }
-
     this.defaultConfig = {
       model: process.env.OPENAI_MODEL || 'deepseek-chat',
       temperature: 0.7,
@@ -87,10 +66,11 @@ export class AIServiceV2 {
         case 'assistant':
           if (msg.tool_call) {
             // 确保tool_call格式符合LangChain要求，包含id字段
+            const toolCallId = String((msg.tool_call).id || `toolcall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
             const toolCall = {
-              id: msg.tool_call.id || '',
-              name: msg.tool_call.function?.name || msg.tool_call.name || '',
-              args: msg.tool_call.function?.arguments || msg.tool_call.args || {},
+              id: toolCallId,
+              name: String(msg.tool_call.name || ''),
+              args: msg.tool_call.args || {},
               type: 'tool_call' as const
             };
             return new AIMessage({
@@ -143,8 +123,14 @@ export class AIServiceV2 {
               const toolName = toolCallWithId.name;
               const toolParams = toolCallWithId.args || {};
               
-              // 调用工具
-              const toolResult = await mcpService.callTool(toolName, toolParams);
+              // 查找对应的LangChain工具
+              const tool = this.tools.find(t => t.name === toolName);
+              if (!tool) {
+                throw new Error(`未找到工具: ${toolName}`);
+              }
+              
+              // 直接调用LangChain工具
+              const toolResult = await tool.invoke(toolParams);
               
               // 更新消息列表，包含工具调用和结果
               messages.push(
@@ -155,7 +141,7 @@ export class AIServiceV2 {
                 },
                 {
                   role: 'tool',
-                  content: JSON.stringify(toolResult),
+                  content: toolResult,
                   tool_call_id: toolCallWithId.id
                 }
               );
@@ -204,13 +190,15 @@ export class AIServiceV2 {
         : this.chatModel;
 
       // 创建SSE响应
-      const self = this;
+      const tools = this.tools;
+      const convertToBaseMessage = this.convertToBaseMessage.bind(this);
+      
       return new Response(
         new ReadableStream({
           async start(controller) {
-            const encoder = new TextEncoder();
-
             try {
+              const encoder = new TextEncoder();
+              
               // 处理模型输出流
               const stream = await modelWithTools.stream(baseMessages);
               
@@ -227,11 +215,17 @@ export class AIServiceV2 {
                         const toolName = toolCall.name;
                         const toolParams = toolCall.args || {};
                         
-                        // 调用工具
-                        const toolResult = await mcpService.callTool(toolName, toolParams);
+                        // 查找对应的LangChain工具
+                        const tool = tools.find(t => t.name === toolName);
+                        if (!tool) {
+                          throw new Error(`未找到工具: ${toolName}`);
+                        }
+                        
+                        // 直接调用LangChain工具
+                        const toolResult = await tool.invoke(toolParams);
                         
                         // 将工具调用结果发送给客户端
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ toolCallResult: JSON.stringify(toolResult) })}\n\n`));
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ toolCallResult: toolResult })}\n\n`));
                         
                         // 更新消息列表，包含工具调用和结果
                         messages.push(
@@ -242,13 +236,13 @@ export class AIServiceV2 {
                           },
                           {
                             role: 'tool',
-                            content: JSON.stringify(toolResult),
+                            content: toolResult,
                             tool_call_id: toolCall.id
                           }
                         );
                         
                         // 递归调用，获取AI对工具结果的响应
-                        const followupBaseMessages = self.convertToBaseMessage(messages);
+                        const followupBaseMessages = convertToBaseMessage(messages);
                         const followupStream = await modelWithTools.stream(followupBaseMessages);
                         
                         // 处理后续的响应流
