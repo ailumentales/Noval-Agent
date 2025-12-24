@@ -1,7 +1,7 @@
 // LangChain.js工具定义
-import { StructuredTool } from '@langchain/core/tools';
+import { StructuredTool, tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { chapterOperations } from './database';
+import { chapterOperations, outlineOperations } from './database';
 
 
 // 定义创建章节工具
@@ -127,9 +127,9 @@ export class DeleteChapterTool extends StructuredTool {
 }
 
 // 定义获取章节工具
-export class GetChapterTool extends StructuredTool {
-  name = 'get_chapter';
-  description = '根据章节编号获取指定章节的内容';
+export class GetChapterByNumberTool extends StructuredTool {
+  name = 'get_chapter_by_number';
+  description = '根据章节编号（number字段）获取指定章节的内容';
   
   schema = z.object({
     number: z.number().describe('要获取的章节编号（从1开始）'),
@@ -166,10 +166,50 @@ export class GetChapterTool extends StructuredTool {
   }
 }
 
+// 定义根据ID获取章节工具
+export class GetChapterByIdTool extends StructuredTool {
+  name = 'get_chapter_by_id';
+  description = '根据章节ID（id字段）获取指定章节的内容';
+  
+  schema = z.object({
+    id: z.number().describe('要获取的章节ID'),
+  });
+
+  async _call(input: { 
+    id: number
+  }): Promise<string> {
+    if (input.id < 1) {
+      throw new Error('章节ID不能小于1');
+    }
+
+    console.log(`[GetChapterByIdTool] 获取章节，ID: ${input.id}`);
+    const chapter = await chapterOperations.getById(input.id);
+    
+    if (!chapter) {
+      throw new Error(`未找到ID为 ${input.id} 的章节`);
+    }
+    
+    // 格式化章节内容
+    const chapterInfo = {
+      id: chapter.id,
+      title: chapter.title,
+      number: chapter.number,
+      prompt: chapter.prompt,
+      content: chapter.content || '',
+      word_count: chapter.word_count,
+      created_at: chapter.created_at,
+      updated_at: chapter.updated_at
+    };
+    
+    console.log(`[GetChapterByIdTool] 成功获取章节，ID: ${chapter.id}, 标题: ${chapter.title}`);
+    return JSON.stringify(chapterInfo, null, 2);
+  }
+}
+
 // 定义按范围获取章节工具
-export class GetChaptersByRangeTool extends StructuredTool {
-  name = 'get_chapters_by_range';
-  description = '根据章节编号范围获取多个章节的标题、提示词和前200字正文';
+export class GetChaptersByNumberRangeTool extends StructuredTool {
+  name = 'get_chapters_by_number_range';
+  description = '根据章节编号(number字段）范围获取多个章节的标题、提示词和前200字正文，同时返回章节总数和编号范围信息';
   
   schema = z.object({
     startNumber: z.number().describe('起始章节编号（从1开始）'),
@@ -185,8 +225,14 @@ export class GetChaptersByRangeTool extends StructuredTool {
       throw new Error('无效的章节范围，请确保起始编号大于等于1且结束编号大于等于起始编号');
     }
     
-    // 获取章节范围
+    // 获取所有章节以计算总数和编号范围
     console.log(`[GetChaptersByRangeTool] 获取章节范围: ${input.startNumber}-${input.endNumber}`);
+    const allChapters = await chapterOperations.getAll();
+    const totalChapters = allChapters.length;
+    const minChapterNumber = allChapters.length > 0 ? Math.min(...allChapters.map(ch => ch.number)) : 0;
+    const maxChapterNumber = allChapters.length > 0 ? Math.max(...allChapters.map(ch => ch.number)) : 0;
+    
+    // 获取指定范围的章节
     const chapters = await chapterOperations.getByRange(input.startNumber, input.endNumber);
     
     if (!chapters || chapters.length === 0) {
@@ -203,11 +249,141 @@ export class GetChaptersByRangeTool extends StructuredTool {
       word_count: chapter.word_count
     }));
     
-    return JSON.stringify(formattedChapters, null, 2);
+    // 构建包含总数和范围信息的响应
+    const response = {
+      summary: {
+        totalChapters,
+        chapterNumberRange: {
+          min: minChapterNumber,
+          max: maxChapterNumber
+        },
+        requestedRange: {
+          start: input.startNumber,
+          end: input.endNumber,
+          count: chapters.length
+        }
+      },
+      chapters: formattedChapters
+    };
+    
+    return JSON.stringify(response, null, 2);
   }
 }
 
+// 定义按ID范围获取章节工具
+export class GetChaptersByIdRangeTool extends StructuredTool {
+  name = 'get_chapters_by_id_range';
+  description = '根据章节ID（id字段）范围获取多个章节的标题、提示词和前200字正文，同时返回章节总数和ID范围信息';
+  
+  schema = z.object({
+    startId: z.number().describe('起始章节ID（从1开始）'),
+    endId: z.number().describe('结束章节ID（包含）'),
+  });
 
+  async _call(input: { 
+    startId: number,
+    endId: number
+  }): Promise<string> {
+    // 验证输入参数
+    if (input.startId < 1 || input.endId < input.startId) {
+      throw new Error('无效的章节ID范围，请确保起始ID大于等于1且结束ID大于等于起始ID');
+    }
+    
+    // 获取所有章节以计算总数和ID范围
+    console.log(`[GetChaptersByIdRangeTool] 获取章节ID范围: ${input.startId}-${input.endId}`);
+    const allChapters = await chapterOperations.getAll();
+    const totalChapters = allChapters.length;
+    const minChapterId = allChapters.length > 0 ? Math.min(...allChapters.map(ch => ch.id)) : 0;
+    const maxChapterId = allChapters.length > 0 ? Math.max(...allChapters.map(ch => ch.id)) : 0;
+    
+    // 筛选指定ID范围的章节
+    const chapters = allChapters.filter(chapter => 
+      chapter.id >= input.startId && chapter.id <= input.endId
+    ).sort((a, b) => a.id - b.id);
+    
+    if (!chapters || chapters.length === 0) {
+      throw new Error(`未找到ID在 ${input.startId}-${input.endId} 范围内的章节`);
+    }
+    
+    // 格式化章节信息，只包含标题、提示词和前200字正文
+    const formattedChapters = chapters.map(chapter => ({
+      id: chapter.id,
+      number: chapter.number,
+      title: chapter.title,
+      prompt: chapter.prompt,
+      contentPreview: chapter.content ? chapter.content.substring(0, 200) + (chapter.content.length > 200 ? '...' : '') : '',
+      word_count: chapter.word_count
+    }));
+    
+    // 构建包含总数和范围信息的响应
+    const response = {
+      summary: {
+        totalChapters,
+        chapterIdRange: {
+          min: minChapterId,
+          max: maxChapterId
+        },
+        requestedRange: {
+          start: input.startId,
+          end: input.endId,
+          count: chapters.length
+        }
+      },
+      chapters: formattedChapters
+    };
+    
+    return JSON.stringify(response, null, 2);
+  }
+}
+
+// 定义获取全部大纲工具
+export class GetAllOutlinesTool extends StructuredTool {
+  name = 'get_all_outlines';
+  description = '获取全部大纲的详细信息，包括类型、名称和内容';
+  
+  schema = z.object({});
+
+  async _call(): Promise<string> {
+    try {
+      // 获取所有大纲
+      const outlines = await outlineOperations.getAll();
+      
+      // 格式化大纲信息
+      const formattedOutlines = outlines.map(outline => ({
+        id: outline.id,
+        type: outline.type,
+        name: outline.name,
+        content: outline.content || '',
+        created_at: outline.created_at,
+        updated_at: outline.updated_at
+      }));
+      
+      // 构建响应
+      const response = {
+        summary: {
+          totalOutlines: outlines.length
+        },
+        outlines: formattedOutlines
+      };
+      
+      return JSON.stringify(response, null, 2);
+    } catch (error) {
+      return JSON.stringify({ 
+        error: error instanceof Error ? error.message : '获取大纲失败' 
+      }, null, 2);
+    }
+  }
+}
+
+const responseObject = z.object({
+  response: z.string().describe("Response to user."),
+});
+
+export const responseTool = tool(() => {}, {
+  name: "response",
+  description: "Respond to the user.",
+  schema: responseObject,
+})
 
 // 创建并导出所有工具实例
 export const createTools = (): StructuredTool[] => {
@@ -215,8 +391,29 @@ export const createTools = (): StructuredTool[] => {
     new CreateChapterTool(),
     new UpdateChapterTool(),
     new DeleteChapterTool(),
-    new GetChapterTool(),
-    new GetChaptersByRangeTool()
+    new GetChapterByNumberTool(),
+    new GetChapterByIdTool(),
+    new GetChaptersByNumberRangeTool(),
+    new GetChaptersByIdRangeTool(),
+    new GetAllOutlinesTool()
+  ];
+};
+
+// 大纲工具
+export const outlineTools = (): StructuredTool[] => {
+  return [
+    new GetAllOutlinesTool()
+  ];
+};
+
+// 内容工具
+export const contentTools = (): StructuredTool[] => {
+  return [
+    // new GetChapterByNumberTool(),
+    new GetChapterByIdTool(),
+    // new GetChaptersByNumberRangeTool(),
+    new GetChaptersByIdRangeTool(),
+    new GetAllOutlinesTool()
   ];
 };
 
@@ -224,5 +421,8 @@ export const createTools = (): StructuredTool[] => {
 export const createChapterTool = new CreateChapterTool();
 export const updateChapterTool = new UpdateChapterTool();
 export const deleteChapterTool = new DeleteChapterTool();
-export const getChapterTool = new GetChapterTool();
-export const getChaptersByRangeTool = new GetChaptersByRangeTool();
+export const getChapterTool = new GetChapterByNumberTool();
+export const getChapterByIdTool = new GetChapterByIdTool();
+export const getChaptersByRangeTool = new GetChaptersByNumberRangeTool();
+export const getChaptersByIdRangeTool = new GetChaptersByIdRangeTool();
+export const getAllOutlinesTool = new GetAllOutlinesTool();

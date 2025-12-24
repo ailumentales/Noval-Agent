@@ -207,6 +207,23 @@ export const chapterOperations = {
     if (chapterIndex === -1) {
       return { changes: 0 };
     }
+
+    // 如果没有number，保持当前编号
+    if (!data.number) {
+      data.number = db.chapters[chapterIndex].number;
+    }
+    // 如果没有title，保持当前标题
+    if (!data.title) {
+      data.title = db.chapters[chapterIndex].title;
+    }
+    // 如果没有prompt，保持当前prompt
+    if (!data.prompt) {
+      data.prompt = db.chapters[chapterIndex].prompt;
+    }
+    // 如果没有content，保持当前内容
+    if (!data.content) {
+      data.content = db.chapters[chapterIndex].content;
+    }
     
     const chapter = db.chapters[chapterIndex];
     const updatedChapter = {
@@ -214,11 +231,12 @@ export const chapterOperations = {
       ...data,
       updated_at: new Date().toISOString()
     };
-    
     // 更新字数
     if (data.content !== undefined) {
       updatedChapter.word_count = data.content.length;
     }
+
+    console.log('更新章节:', updatedChapter);
     
     db.chapters[chapterIndex] = updatedChapter;
     saveDatabase(db);

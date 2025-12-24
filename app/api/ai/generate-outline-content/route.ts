@@ -1,7 +1,4 @@
-import { createAIServiceV2 } from '@/app/lib/ai-service-v2';
-import { OpenAIMessage } from '@/app/lib/ai-service-v2';
-import { NextResponse } from 'next/server';
-import { Outline, outlineOperations } from '@/app/lib/database';
+import { streamOutlineContent } from '@/app/lib/chains/generate_outline_content';
 
 export async function POST(request: Request) {
   try {
@@ -9,78 +6,76 @@ export async function POST(request: Request) {
 
     // 验证参数
     if (!outlineId) {
-      return NextResponse.json({ error: '请提供大纲ID' }, { status: 400 });
+      return new Response(JSON.stringify({ error: '请提供大纲ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     if (!promptText) {
-      return NextResponse.json({ error: '请提供生成提示词' }, { status: 400 });
+      return new Response(JSON.stringify({ error: '请提供生成提示词' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
-    // 创建AI服务实例
-    const aiService = createAIServiceV2();
-
-    // 从数据库获取所有大纲
-    const settingsList = await outlineOperations.getAll();
-
-    // 根据大纲ID获取当前大纲
-    const outline = settingsList.find(out => out.id === outlineId);
-    if (!outline) {
-      return NextResponse.json({ error: '未找到指定大纲' }, { status: 404 });
-    }
-
-    // 构建所有大纲内容
-    const allOutlinesContent = settingsList.map((outline: Outline) => {
-      return `- 名称：${outline.name}（类型：${outline.type}）\n内容：${outline.content || '无'}`;
-    }).join('\n\n');
-
-    // 准备AI消息
-    const systemMessages: OpenAIMessage[] = [
-      {
-        role: 'system',
-        content: `你是一位专业的小说家助手，正在处理大纲：${outline.name}（类型：${outline.type}）。请根据用户的请求和大纲的类型，进一步丰富小说的设定和基础背景、大纲故事等内容。`
-      },
-      {
-        role: 'system',
-        content: `你需要为整个小说的创作设定大纲，注意你不需要编写详细的剧情或者正文，而是对于小说的设定、基础背景、大纲故事等内容进行完善。`
-      },
-      {
-        role: 'system',
-        content: `当前大纲的相关信息：\n- 名称：${outline.name}\n- 类型：${outline.type}\n`
-      },
-      {
-        role: 'user',
-        content: `当前大纲的旧内容, 用户可能是对这部分内容不满意，你需要结合旧内容和用户请求生成新的内容：${oldContent}`
-      },
-    ];
-
-    const userMessages: OpenAIMessage[] = [
-      {
-        role: 'user',
-        content: `小说所有设定：\n${allOutlinesContent}`
-      },
-      {
-        role: 'user',
-        content: promptText
+    // 创建流式响应
+    const encoder = new TextEncoder();
+    
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          // 使用流式Agent生成大纲内容
+          const contentStream = streamOutlineContent(outlineId, promptText, oldContent);
+          
+          for await (const chunk of contentStream) {
+            // console.log('Received chunk:', chunk.content);
+            // 直接处理chunk.content
+            if (chunk && chunk.content) {
+              // 处理不同类型的内容
+              let content = '';
+              if (typeof chunk.content === 'string') {
+                content = chunk.content;
+              } else if (Array.isArray(chunk.content)) {
+                // 如果是数组格式，提取文本内容
+                content = chunk.content
+                  .filter(item => item.type === 'text')
+                  .map(item => item.text)
+                  .join('');
+              }
+              
+              if (content) {
+                // 发送内容块
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
+              }
+            }
+          }
+          
+          // 发送结束标记
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+          controller.close();
+        } catch (error) {
+          console.error('流式生成大纲内容失败:', error);
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: error instanceof Error ? error.message : '生成大纲内容失败' })}\n\n`));
+          controller.close();
+        }
       }
-    ];
+    });
 
-    // 准备AI消息（包含类型信息）
-    const messages: OpenAIMessage[] = [
-      {
-        role: 'system',
-        content: "当前用户在页面进行编辑，你只需要返回文本内容，不需要调用工具进行保存。"
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
       },
-      ...systemMessages,
-      ...userMessages
-    ];
-
-    // 使用流式响应
-    return aiService.createSSEResponse(request, messages);
+    });
   } catch (error) {
     console.error('生成大纲内容失败:', error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : '生成大纲内容失败' }), {
+    return new Response(JSON.stringify({
+      error: error instanceof Error ? error.message : '生成大纲内容失败，请检查控制台获取更多信息'
+    }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 }

@@ -271,7 +271,7 @@ const AIInteraction: React.FC<AIInteractionProps> = ({
       </div>
       
       {/* 顶部输入框 - 固定最小高度 */}
-      <Card className="mb-6 flex-shrink-0">
+      <Card className="mb-6 flex-shrink-0" bodyStyle={{ height: 'calc(100% - 50px)' }}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-800">输入请求</h3>
           <Button type="primary" size="large" onClick={handleGenerate} disabled={generating}>
@@ -280,7 +280,7 @@ const AIInteraction: React.FC<AIInteractionProps> = ({
         </div>
         <TextArea
           placeholder="请输入与AI的对话请求..."
-          style={{ width: '100%', minHeight: '150px' }}
+          style={{ width: '100%', height: '100%', minHeight: '150px' }}
           value={promptText}
           onChange={setPromptText}
         />

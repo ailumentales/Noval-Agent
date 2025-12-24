@@ -1,10 +1,8 @@
-
 import { createAgent } from "langchain";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { createTools } from '@/app/lib/langchain-tools';
 import { outlineOperations, chapterOperations } from '@/app/lib/database';
 import { createAgentModel } from '@/app/lib/chains/base';
-
 
 
 // 创建章节生成Agent
@@ -46,20 +44,33 @@ export async function createChapterListAgent() {
                     你需要检测当前已经生成过的章节数量，不要生成重复的章节。需要恰好生成用户需要的小说章节数量。`
                 }
             ]
-        })
+        }),
     })
 
     return agent;
 }
 
 // 生成章节列表的便捷函数
-export async function generateChapterList(autoGenerateCount: number) {
+export async function generateChapterList(autoGenerateCount: number, outlineId?: number, prompt?: string) {
     const agent = await createChapterListAgent();
 
-    const userMessage = `你需要基于已有的章节，在之后新增生成 ${autoGenerateCount} 个小说章节`;
+    const messages = [new HumanMessage(`你需要基于已有的章节，在之后新增生成 ${autoGenerateCount} 个小说章节`)];
+    
+    // 如果提供了大纲ID，添加到提示中
+    if (outlineId) {
+        const outline = await outlineOperations.getById(outlineId);
+        if (outline) {
+            messages.push(new HumanMessage(`请特别参考以下大纲设定：\n【${outline.type}】${outline.name}：${outline.content || '暂无内容'}`));
+        }
+    }
+    
+    // 如果提供了自定义提示，添加到提示中
+    if (prompt) {
+        messages.push(new HumanMessage(`用户额外要求：${prompt}`));
+    }
 
     const result = await agent.invoke({
-        messages: [new HumanMessage(userMessage)]
+        messages
     });
 
     return result;

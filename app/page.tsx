@@ -33,9 +33,6 @@ export default function Home() {
   // 选中项目状态
   const [selectedOutline, setSelectedOutline] = useState<Outline | null>(null);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
-  // 自动生成章节状态
-  const [autoGenerateCount, setAutoGenerateCount] = useState<number>(1);
-  const [generatingChapters, setGeneratingChapters] = useState<boolean>(false);
   
   // 从数据库获取数据
   useEffect(() => {
@@ -81,50 +78,6 @@ export default function Home() {
     } catch (error) {
       console.error('获取章节失败:', error);
       alert(error instanceof Error ? error.message : '获取章节失败，请检查控制台获取更多信息');
-    }
-  };
-  
-  // 自动生成章节列表
-  const handleAutoGenerateChapters = async () => {
-    try {
-      if (!autoGenerateCount || autoGenerateCount < 1) {
-        alert('请输入有效的章节数量');
-        return;
-      }
-      
-      setGeneratingChapters(true);
-      
-      // 调用后端API生成章节列表
-      const response = await fetch('/api/ai/generate-chapters', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          autoGenerateCount
-        })
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '生成章节列表失败');
-      }
-      
-      const { content: aiResponse } = await response.json();
-      console.log('[AutoGenerate] 完整AI响应:', aiResponse);
-      
-      // 刷新章节列表
-      fetchChapters();
-      
-      // 关闭模态框
-      setShowAutoGenerateModal(false);
-      
-      alert(`成功生成章节`);
-    } catch (error) {
-      console.error('自动生成章节失败:', error);
-      alert(error instanceof Error ? error.message : '自动生成章节失败，请检查控制台获取更多信息');
-    } finally {
-      setGeneratingChapters(false);
     }
   };
   
@@ -348,10 +301,8 @@ export default function Home() {
       <AutoGenerateModal
         visible={showAutoGenerateModal}
         onCancel={() => setShowAutoGenerateModal(false)}
-        onGenerate={handleAutoGenerateChapters}
-        generating={generatingChapters}
-        autoGenerateCount={autoGenerateCount}
-        onCountChange={(count) => setAutoGenerateCount(count)}
+        onSuccess={fetchChapters}
+        outlines={settingsList}
       />
     </div>
   );
